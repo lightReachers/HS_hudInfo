@@ -28,6 +28,9 @@ class getData:
 
     def get_parm_type(self, parm):
         return parm.parmTemplate().type()
+    
+    def ref_parm(self, parm_from, parm_to):
+        pass
 
     def trim_number(self, number):
         result = number
@@ -57,7 +60,7 @@ class getData:
         ui_name = parm.description()
         result["ui_name"] = ui_name
 
-        raw_value = parm.eval()
+        raw_value = parm.evalAtFrame(hou.frame())
         result["raw_value"] = raw_value
 
         parm_type = self.get_parm_type(parm)
@@ -65,13 +68,14 @@ class getData:
         result["value"] = raw_value
         # If the parameter type is a ramp, format the value list as [time, value]
         if parm.parmTemplate().interfaceType() == 'ramp_float':
+            raw_value = parm.evalAsRampAtFrame(hou.frame())
             value = [[self.trim_number(list(raw_value.keys())[i]), self.trim_number(list(raw_value.values())[i])] for i in range(len(list(raw_value.keys())))] 
         elif parm.parmTemplate().interfaceType() == 'direction':
             value = [self.trim_number(list(raw_value)[i]) for i in range(len(raw_value))]
         elif parm.parmTemplate().interfaceType() == 'float':    
             value = self.trim_number(raw_value)
         elif parm.parmTemplate().interfaceType() == 'ordered_menu':
-            value = parm.evalAsString()
+            value = parm.evalAsStringAtFrame(hou.frame())
         else:
             value = parm.eval()
 
@@ -83,7 +87,7 @@ class getData:
 
         return result
 
-    def get_parm_value(self, parms=list()):
+    def get_parm_value_on_node(self, node, parms=list()):
         result = dict()
         self.set_parm_attr() 
         target_nodes = [self.object_node, self.solver_node]
@@ -92,21 +96,59 @@ class getData:
         for parm_path in all_parms_path:
             parm = hou.parm(parm_path)
             if parm:
+                node_parm = node.parm(parm.name())
+                if not node_parm:
+                    parm_template = parm.parmTemplate().clone()
+                    pt_grp = node.parmTemplateGroup()
+                    pt_grp.addParmTemplate(parm_template)
+                    node.setParmTemplateGroup(pt_grp)
+                else:
+                    value_parm = parm.eval()
+                    node_parm.set(value_parm)      
+                
+
                 parm_result = self.eval_parm(parm)
-                if not parm_result["is_default"]:
+                if not parm_result["is_default"] or parm_result["is_animated"]:
                     value = parm_result["value"] 
                     #print(f"{ parm.description() } : {value}")
-                    result[parm.description()] = value     
+                    result[node_parm.description()] = value     
             else:
-                parm = hou.parmTuple(parm_path)
+                parm = hou.parmTuple(node_parm.path())
                 if parm:
+                    parm = node.parm(parm.name())
                     parm_result = self.eval_parm(parm)
-                    if not parm_result["is_default"]:
+                    if not parm_result["is_default"] or parm_result["is_animated"]:
                         value = parm_result["value"] 
                         #print(f"{ parm.description() } : {value}")
                         result[parm.description()] = value 
         #print(result.items())                    
         return result
+
+    #   def get_parm_value(self, parms=list()):
+    #     result = dict()
+    #     self.set_parm_attr() 
+    #     target_nodes = [self.object_node, self.solver_node]
+    #     all_parms_path = list()
+    #     all_parms_path = [ os.path.join(target_nodes[i].path(), parms[j])  for i in range(len(target_nodes)) for j in range(len(parms))]
+    #     for parm_path in all_parms_path:
+    #         parm = hou.parm(parm_path)
+    #         if parm:
+    #             parm_result = self.eval_parm(parm)
+    #             if not parm_result["is_default"]:
+    #                 value = parm_result["value"] 
+    #                 #print(f"{ parm.description() } : {value}")
+    #                 result[parm.description()] = value     
+    #         else:
+    #             parm = hou.parmTuple(parm_path)
+    #             if parm:
+    #                 parm_result = self.eval_parm(parm)
+    #                 if not parm_result["is_default"]:
+    #                     value = parm_result["value"] 
+    #                     #print(f"{ parm.description() } : {value}")
+    #                     result[parm.description()] = value 
+    #     #print(result.items())                    
+    #     return result
+
 
     def get_temp_path(self):
         houdini_temp_root = hou.getenv("HOUDINI_TEMP_DIR")
